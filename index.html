@@ -47,10 +47,23 @@
     width: 100%;
     min-height: 100dvh;
     font: 18px / 1.5 system-ui;
+    font-family: Menlo, Monaco, Consolas, monospace;
     tab-size: 4;
     white-space: pre-wrap;
     text-wrap-style: stable;
     overflow-wrap: break-word;
+  }
+
+  #clock {
+    padding: 12px max(18px, calc(50vw - 400px)) 0;
+    font-family: Menlo, Monaco, Consolas, monospace;
+    font-size: 14px;
+    color: #666;
+    user-select: none;
+
+    @media (prefers-color-scheme: dark) {
+      color: #888;
+    }
   }
 
   .md-h1,
@@ -222,6 +235,7 @@
     }
   }
 </style>
+<div id="clock"></div>
 <article contenteditable="plaintext-only" spellcheck autofocus></article>
 <button id="button" class="noprint">
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -238,6 +252,30 @@
   <a class="item" href="https://github.com/antonmedv/textarea" target="_blank">GitHub</a>
 </div>
 <script>
+  updateClock()
+  setInterval(updateClock, 1000)
+
+  function updateClock() {
+    const now = new Date()
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    const formatTime = (date, timeZone) => {
+      const day = days[date.getDay()]
+      const month = months[date.getMonth()]
+      const dateNum = String(date.getDate()).padStart(2, '0')
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      const tzName = date.toLocaleTimeString('en-US', {timeZoneName: 'short', timeZone}).split(' ')[2]
+      return `${day} ${month} ${dateNum} ${hours}:${minutes} ${tzName}`
+    }
+
+    const localTime = formatTime(now, Intl.DateTimeFormat().resolvedOptions().timeZone)
+    const utcTime = formatTime(new Date(now.toLocaleString('en-US', {timeZone: 'UTC'})), 'UTC')
+
+    document.querySelector('#clock').textContent = `${localTime} / ${utcTime}`
+  }
+
   initUI()
 
   const article = document.querySelector('article')
