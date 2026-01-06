@@ -566,8 +566,8 @@
       if (isUndo(event)) doUndo(event)
       if (isRedo(event)) doRedo(event)
       if (event.code === 'Enter' && !event.shiftKey) handleEnter(event)
-      if (event.altKey && event.code === 'ArrowUp') moveLine(event, -1)
-      if (event.altKey && event.code === 'ArrowDown') moveLine(event, 1)
+      if (event.altKey && event.shiftKey && event.code === 'ArrowUp') moveLine(event, -1)
+      if (event.altKey && event.shiftKey && event.code === 'ArrowDown') moveLine(event, 1)
       if (shouldRecord(event) && !recording) {
         recordHistory()
         recording = true
