@@ -60,10 +60,17 @@
     font-size: 14px;
     color: #666;
     user-select: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 2em;
 
     @media (prefers-color-scheme: dark) {
       color: #888;
     }
+  }
+
+  #stats {
+    white-space: nowrap;
   }
 
   .md-h1,
@@ -235,7 +242,7 @@
     }
   }
 </style>
-<div id="clock"></div>
+<div id="clock"><span id="time"></span><span id="stats"></span></div>
 <article contenteditable="plaintext-only" spellcheck autofocus></article>
 <button id="button" class="noprint">
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -274,7 +281,15 @@
     const localTime = formatTime(now, Intl.DateTimeFormat().resolvedOptions().timeZone)
     const utcTime = formatTime(new Date(now.toLocaleString('en-US', {timeZone: 'UTC'})), 'UTC')
 
-    document.querySelector('#clock').textContent = `${localTime} / ${utcTime}`
+    document.querySelector('#time').textContent = `${localTime} / ${utcTime}`
+  }
+
+  function updateStats() {
+    const text = document.querySelector('article').textContent || ''
+    const chars = text.length
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0
+    const lines = text.split('\n').length
+    document.querySelector('#stats').textContent = `${words} words · ${chars} chars · ${lines} lines`
   }
 
   initUI()
@@ -282,12 +297,13 @@
   const article = document.querySelector('article')
   const editor = new Editor(article, parseMarkdown)
   article.addEventListener('input', debounce(500, save))
+  article.addEventListener('input', debounce(100, updateStats))
   article.addEventListener('blur', save)
   article.addEventListener('click', event => {
     if (event.target.tagName === 'A') window.open(event.target.getAttribute('href'), '_blank')
   })
-  addEventListener('DOMContentLoaded', load)
-  addEventListener('hashchange', load)
+  addEventListener('DOMContentLoaded', () => { load().then(updateStats) })
+  addEventListener('hashchange', () => { load().then(updateStats) })
   addEventListener('load', () => new MutationObserver(save).observe(article, {attributeFilter: ['style']}))
   addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.code === 'KeyS') {
@@ -549,6 +565,9 @@
       prev = toString()
       if (isUndo(event)) doUndo(event)
       if (isRedo(event)) doRedo(event)
+      if (event.code === 'Enter' && !event.shiftKey) handleEnter(event)
+      if (event.altKey && event.shiftKey && event.code === 'ArrowUp') moveLine(event, -1)
+      if (event.altKey && event.shiftKey && event.code === 'ArrowDown') moveLine(event, 1)
       if (shouldRecord(event) && !recording) {
         recordHistory()
         recording = true
@@ -566,6 +585,110 @@
       if (event.inputType === 'historyUndo') doUndo(event)
       if (event.inputType === 'historyRedo') doRedo(event)
     })
+
+    function handleEnter(event) {
+      const text = toString()
+      const pos = save()
+      const cursor = pos.start
+
+      // Find the start of the current line
+      let lineStart = text.lastIndexOf('\n', cursor - 1) + 1
+      const line = text.slice(lineStart, cursor)
+
+      // Match leading whitespace and optional list markers
+      const match = line.match(/^(\s*)([-*+]|\d+\.)?(\s*)/)
+      if (!match) return
+
+      const [, indent, marker, markerSpace] = match
+      const fullPrefix = indent + (marker || '') + (markerSpace || '')
+
+      // If line is just the marker (empty list item), remove it instead
+      if (marker && line.trim() === marker) {
+        event.preventDefault()
+        const before = text.slice(0, lineStart)
+        const after = text.slice(cursor)
+        element.textContent = before + after
+        highlight(element)
+        restore({start: lineStart, end: lineStart, dir: '->'})
+        return
+      }
+
+      // Insert newline with appropriate continuation
+      if (fullPrefix) {
+        event.preventDefault()
+        let insertion = '\n' + indent
+        if (marker) {
+          // Increment number for numbered lists
+          if (/^\d+\.$/.test(marker)) {
+            const num = parseInt(marker) + 1
+            insertion += num + '.' + markerSpace
+          } else {
+            insertion += marker + markerSpace
+          }
+        }
+        document.execCommand('insertText', false, insertion)
+      }
+    }
+
+    function moveLine(event, direction) {
+      event.preventDefault()
+      const text = toString()
+      const pos = save()
+      const lines = text.split('\n')
+
+      // Find line indices for selection
+      let charCount = 0
+      let startLine = 0, endLine = 0
+      for (let i = 0; i < lines.length; i++) {
+        if (charCount + lines[i].length >= pos.start && startLine === 0) {
+          startLine = i
+        }
+        if (charCount + lines[i].length >= pos.end) {
+          endLine = i
+          break
+        }
+        charCount += lines[i].length + 1
+      }
+
+      // Check bounds
+      if (direction === -1 && startLine === 0) return
+      if (direction === 1 && endLine === lines.length - 1) return
+
+      // Calculate cursor offset within selection
+      let startLineBegin = lines.slice(0, startLine).join('\n').length + (startLine > 0 ? 1 : 0)
+      const cursorOffsetStart = pos.start - startLineBegin
+      const cursorOffsetEnd = pos.end - startLineBegin
+
+      // Swap lines
+      if (direction === -1) {
+        const temp = lines[startLine - 1]
+        for (let i = startLine - 1; i < endLine; i++) {
+          lines[i] = lines[i + 1]
+        }
+        lines[endLine] = temp
+        startLine--
+        endLine--
+      } else {
+        const temp = lines[endLine + 1]
+        for (let i = endLine + 1; i > startLine; i--) {
+          lines[i] = lines[i - 1]
+        }
+        lines[startLine] = temp
+        startLine++
+        endLine++
+      }
+
+      element.textContent = lines.join('\n')
+      highlight(element)
+
+      // Restore cursor position relative to moved lines
+      startLineBegin = lines.slice(0, startLine).join('\n').length + (startLine > 0 ? 1 : 0)
+      restore({
+        start: startLineBegin + cursorOffsetStart,
+        end: startLineBegin + cursorOffsetEnd,
+        dir: pos.dir
+      })
+    }
 
     function save() {
       const s = getSelection()
